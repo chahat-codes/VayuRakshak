@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+.venv/
+*.py[cod]
+backend/data/observations.csv
+backend/data/community.sqlite3
+backend/data/historical.sqlite3
+backend/data/uploads/
+backend/models/*
