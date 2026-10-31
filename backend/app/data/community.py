@@ -64,6 +64,7 @@ def init():
           created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS report_status_history(id INTEGER PRIMARY KEY,report_id INTEGER NOT NULL REFERENCES environment_reports(id) ON DELETE CASCADE,status TEXT NOT NULL,actor_id TEXT,actor_name TEXT,note TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS environment_confirmations(id INTEGER PRIMARY KEY,report_id INTEGER NOT NULL REFERENCES environment_reports(id) ON DELETE CASCADE,user_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('observed','dispute')),created_at TEXT NOT NULL,UNIQUE(report_id,user_id));
         CREATE TABLE IF NOT EXISTS points(id INTEGER PRIMARY KEY,user_id TEXT NOT NULL,display_name TEXT NOT NULL,community_id INTEGER REFERENCES communities(id) ON DELETE SET NULL,source_type TEXT NOT NULL,source_id TEXT NOT NULL,points INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(user_id,source_type,source_id));
         """)
         columns={row[1] for row in c.execute("PRAGMA table_info(environment_reports)")}
