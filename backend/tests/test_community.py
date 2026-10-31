@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from app.data import community
 from app.main import app
+import app.main as main
 
 class CommunityTests(unittest.TestCase):
     @classmethod
@@ -13,7 +14,7 @@ class CommunityTests(unittest.TestCase):
 
     def setUp(self):
         with community.connect() as c:
-            for table in ("reports","comments","likes","posts","points","event_participants","events","completions","pledges","memberships","communities"):
+            for table in ("environment_reports","reports","comments","likes","posts","points","event_participants","events","completions","pledges","memberships","communities"):
                 c.execute(f"DELETE FROM {table}")
 
     def test_home_and_challenge_catalog_apis_remain_available(self):
@@ -61,5 +62,49 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(feed['comments_count'],1); self.assertEqual(feed['comments'][0]['content'],'Good idea.')
         report=c.post('/api/community/reports',json={**person,"kind":"post","item_id":post_id,"reason":"This post seems inappropriate."})
         self.assertEqual(report.status_code,201,report.text)
+
+    def test_environment_report_claim_resolution_and_participation_points(self):
+        c=self.client
+        reporter={"user_id":"reporter_123456","display_name":"Reporter"}
+        volunteer={"user_id":"volunteer_123456","display_name":"Volunteer"}
+        group=c.post('/api/community/communities',json={"name":"Patiala Clean Air","city":"Patiala","description":"Neighbours working together for cleaner streets."}).json()
+        with tempfile.TemporaryDirectory() as folder:
+            from unittest.mock import patch
+            root=Path(folder); photo='a'*32+'.jpg'; proof='b'*32+'.png'
+            (root/photo).write_bytes(b'photo'); (root/proof).write_bytes(b'proof')
+            with patch.object(main,'UPLOADS',root):
+                body={**reporter,"category":"waste_burning","description":"Smoke from burning waste beside the road.","city":"Patiala","latitude":30.34,"longitude":76.39,"photo_url":"/uploads/"+photo,"community_id":group['id']}
+                created=c.post('/api/environment/reports',json=body)
+                self.assertEqual(created.status_code,201,created.text)
+                self.assertEqual(created.json()['ai_classification'],'unavailable')
+                report_id=created.json()['id']
+                listing=c.get('/api/environment/reports',params={"city":"Patiala"}).json()
+                self.assertEqual(listing['count'],1)
+                self.assertEqual(listing['reports'][0]['status'],'submitted')
+                self.assertEqual(listing['nearby_organisations'],'unavailable')
+                claimed=c.post(f'/api/environment/reports/{report_id}/claim',json=volunteer)
+                self.assertEqual(claimed.json()['status'],'claimed')
+                self.assertEqual(c.post(f'/api/environment/reports/{report_id}/claim',json=reporter).status_code,409)
+                wrong=c.post(f'/api/environment/reports/{report_id}/resolve',json={**reporter,"resolution_photo_url":"/uploads/"+proof})
+                self.assertEqual(wrong.status_code,403)
+                resolved=c.post(f'/api/environment/reports/{report_id}/resolve',json={**volunteer,"resolution_photo_url":"/uploads/"+proof,"resolution_note":"Waste cleared safely."})
+                self.assertEqual(resolved.status_code,200,resolved.text)
+                self.assertTrue(resolved.json()['points_are_participation_only'])
+                self.assertEqual(c.get('/api/community/progress',params={"user_id":volunteer['user_id']}).json()['points'],30)
+                self.assertEqual(c.get('/api/environment/reports').json()['reports'][0]['status'],'resolved')
+
+    def test_environment_reports_reject_missing_or_mismatched_upload_and_city_group(self):
+        c=self.client
+        group=c.post('/api/community/communities',json={"name":"Delhi Green Group","city":"Delhi","description":"A local group for cleaner neighbourhood activities."}).json()
+        body={"user_id":"reporter_abcdef","display_name":"Reporter","category":"garbage","description":"A pile of rubbish is blocking the footpath.","city":"Patiala","photo_url":"/uploads/"+('c'*32)+'.jpg',"community_id":group['id']}
+        with tempfile.TemporaryDirectory() as folder:
+            from unittest.mock import patch
+            with patch.object(main,'UPLOADS',Path(folder)):
+                self.assertEqual(c.post('/api/environment/reports',json=body).status_code,422)
+                (Path(folder)/(('c'*32)+'.jpg')).write_bytes(b'photo')
+                self.assertEqual(c.post('/api/environment/reports',json=body).status_code,422)
+                body['community_id']=None
+                body['latitude']=30
+                self.assertEqual(c.post('/api/environment/reports',json=body).status_code,422)
 
 if __name__ == '__main__': unittest.main()

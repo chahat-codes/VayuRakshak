@@ -34,3 +34,21 @@ footer{border-color:#38283e;color:#ad9daf}footer b,footer button{color:#e0bf82}#
 
 /* Keep Check Your Air charts and update rows inside their cards at every viewport width. */
 .air-page-summary,.air-page-summary>* ,#detail,.air-trend-panel,.air-updates-panel,.air-page-chart-wrap{min-width:0;max-width:100%}.air-trend-panel,.air-page-chart-wrap{overflow:hidden}.air-page-chart-wrap{width:100%;contain:layout paint}.air-page-chart-wrap svg{display:block;width:100%;max-width:100%;min-width:0;height:100%;overflow:hidden}.air-update-row{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr) auto}.air-update-row>*{min-width:0}.air-update-row>span{white-space:normal;overflow-wrap:anywhere}@media(max-width:720px){.air-page-chart-wrap{margin:5px 0}.air-update-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.air-update-row b{grid-column:1/-1}.air-update-row .data-kind{grid-column:2;justify-self:end}}
+
+
+/* Community environmental reports */
+.environment-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:17px;border:1px solid #493548;border-radius:11px;background:linear-gradient(145deg,#241a2c,#201626);box-shadow:var(--shadow)}
+.environment-form>label,.resolution-photo-label{display:grid;gap:6px;color:#e3d6df;font-size:10px;font-weight:600;min-width:0}
+.environment-form>label:nth-of-type(2),.environment-form>label:nth-of-type(4),.environment-form>label:nth-of-type(5),.environment-form>.environment-location,.environment-form>.environment-ai-note,.environment-form>.environment-privacy,.environment-form>button{grid-column:1/-1}
+.environment-form .control{width:100%;min-height:39px;background:#19121f;color:#f5ebdf;border-color:#49364e}
+.environment-form textarea.control{min-height:76px;resize:vertical}
+.environment-form input[type=file],.resolution-photo-label input{max-width:100%;font:10px 'DM Sans';color:#cbbdca}
+.environment-form small,.environment-privacy{color:#ae9eaf;font-size:9px;font-weight:400;line-height:1.5}
+.environment-location{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#c9b9c9;font-size:10px}
+.environment-ai-note{padding:9px 11px;border:1px solid #634a40;border-radius:8px;background:#35251f;color:#e8c991;font-size:9px;line-height:1.5}
+.environment-reports-title{margin-top:25px}.environment-points{padding:7px 9px;border-radius:99px;background:#2c3928;color:#c8d6a6;font-size:9px;white-space:nowrap}
+.environment-report-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.environment-report-card{min-width:0;padding:13px;border:1px solid #493548;border-radius:11px;background:#211729;box-shadow:var(--shadow)}
+.environment-report-top{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#eadfe7;font-size:10px;font-weight:600}.environment-report-photo,.resolution-proof img{display:block;width:100%;max-height:240px;object-fit:cover;border-radius:8px;margin:10px 0;background:#17101f}
+.environment-report-card>p{font-size:11px;line-height:1.55;color:#e1d4df}.environment-report-card>small,.resolution-proof small{display:block;margin:6px 0;color:#b6a8b6;font-size:9px;line-height:1.5;overflow-wrap:anywhere}
+.environment-report-card>.btn{margin-top:10px}.environment-report-card .control{width:100%;background:#19121f;color:#f5ebdf;border-color:#49364e}.environment-report-card .resolution-photo-label{margin-top:10px}.resolution-proof{margin-top:10px;padding-top:6px;border-top:1px solid #493548}
+@media(max-width:650px){.environment-form,.environment-report-list{grid-template-columns:1fr}.environment-form>label,.environment-form>.environment-location,.environment-form>.environment-ai-note,.environment-form>.environment-privacy,.environment-form>button{grid-column:1}.environment-reports-title{gap:8px}.environment-points{white-space:normal}}

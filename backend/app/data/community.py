@@ -41,6 +41,27 @@ def init():
         CREATE TABLE IF NOT EXISTS likes(post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,user_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(post_id,user_id));
         CREATE TABLE IF NOT EXISTS comments(id INTEGER PRIMARY KEY,post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,user_id TEXT NOT NULL,display_name TEXT NOT NULL,content TEXT NOT NULL,created_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'visible');
         CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY,reporter_id TEXT NOT NULL,kind TEXT NOT NULL,item_id INTEGER NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',UNIQUE(reporter_id,kind,item_id));
+        CREATE TABLE IF NOT EXISTS environment_reports(
+          id INTEGER PRIMARY KEY,
+          reporter_id TEXT NOT NULL,
+          reporter_name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          description TEXT NOT NULL,
+          city TEXT NOT NULL,
+          latitude REAL,
+          longitude REAL,
+          photo_url TEXT NOT NULL,
+          community_id INTEGER REFERENCES communities(id) ON DELETE SET NULL,
+          status TEXT NOT NULL DEFAULT 'submitted',
+          claimed_by_id TEXT,
+          claimed_by_name TEXT,
+          claimed_at TEXT,
+          resolution_photo_url TEXT,
+          resolution_note TEXT,
+          resolved_at TEXT,
+          points_awarded INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS points(id INTEGER PRIMARY KEY,user_id TEXT NOT NULL,display_name TEXT NOT NULL,community_id INTEGER REFERENCES communities(id) ON DELETE SET NULL,source_type TEXT NOT NULL,source_id TEXT NOT NULL,points INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(user_id,source_type,source_id));
         """)
 

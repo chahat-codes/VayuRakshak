@@ -2,7 +2,8 @@ import csv, io, os, math
 from datetime import datetime, timedelta, timezone, date
 from zoneinfo import ZoneInfo
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
+import re
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile, Query, Form
 from fastapi.responses import HTMLResponse, Response
@@ -200,6 +201,17 @@ class PostCreate(Person): community_id:Optional[int]=None; content:str=Field(min
 class CommentCreate(Person): post_id:int; content:str=Field(min_length=2,max_length=500)
 class LikeCreate(Person): post_id:int
 class ReportCreate(Person): kind:str=Field(pattern=r"^(post|comment)$"); item_id:int; reason:str=Field(min_length=4,max_length=240)
+class EnvironmentReportCreate(Person):
+    category:Literal["garbage","waste_burning","smoke","other"]
+    description:str=Field(min_length=8,max_length=500)
+    city:str=Field(min_length=2,max_length=80)
+    latitude:Optional[float]=Field(default=None,ge=-90,le=90)
+    longitude:Optional[float]=Field(default=None,ge=-180,le=180)
+    photo_url:str=Field(pattern=r"^/uploads/[a-f0-9]{32}\.(jpg|png|webp)$",max_length=50)
+    community_id:Optional[int]=None
+class EnvironmentResolve(Person):
+    resolution_photo_url:str=Field(pattern=r"^/uploads/[a-f0-9]{32}\.(jpg|png|webp)$",max_length=50)
+    resolution_note:Optional[str]=Field(default=None,max_length=300)
 
 def community_exists(c,cid):
     if cid is None: return
@@ -378,6 +390,60 @@ def report(body:ReportCreate):
             if "UNIQUE" in str(e): raise HTTPException(409,"You already reported this item")
             raise
         return {"received":True,"status":"pending review","message":"Reports are recorded locally. There is no staffed moderation service in this MVP."}
+
+def _require_uploaded_image(url):
+    match=re.fullmatch(r"/uploads/([a-f0-9]{32}\.(?:jpg|png|webp))",url or "")
+    if not match or not (UPLOADS/match.group(1)).is_file():
+        raise HTTPException(422,"Upload a JPG, PNG, or WebP photo first")
+
+@app.post("/api/environment/reports",status_code=201)
+def create_environment_report(body:EnvironmentReportCreate):
+    if (body.latitude is None) != (body.longitude is None):
+        raise HTTPException(422,"Provide both map coordinates or leave both blank")
+    _require_uploaded_image(body.photo_url)
+    city=clean_text(body.city)
+    with cm.connect() as c:
+        if body.community_id is not None:
+            group=c.execute("SELECT city FROM communities WHERE id=?",(body.community_id,)).fetchone()
+            if not group: raise HTTPException(404,"Community not found")
+            if group["city"].casefold()!=city.casefold(): raise HTTPException(422,"Choose a community in the reported city")
+        cur=c.execute("""INSERT INTO environment_reports
+            (reporter_id,reporter_name,category,description,city,latitude,longitude,photo_url,community_id,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (body.user_id,clean_text(body.display_name),body.category,clean_text(body.description),city,body.latitude,body.longitude,body.photo_url,body.community_id,cm.now()))
+        row=c.execute("SELECT * FROM environment_reports WHERE id=?",(cur.lastrowid,)).fetchone()
+        return {**dict(row),"ai_classification":"unavailable","message":"Report submitted. Category is user-selected; AI classification is not connected."}
+
+@app.get("/api/environment/reports")
+def list_environment_reports(city:Optional[str]=None):
+    with cm.connect() as c:
+        if city:
+            rows=c.execute("SELECT * FROM environment_reports WHERE lower(city)=lower(?) ORDER BY created_at DESC LIMIT 100",(city.strip(),)).fetchall()
+        else:
+            rows=c.execute("SELECT * FROM environment_reports ORDER BY created_at DESC LIMIT 100").fetchall()
+        return {"reports":[dict(row) for row in rows],"count":len(rows),"ai_classification":"unavailable","nearby_organisations":"unavailable","note":"Names and locations are user-supplied. No login, identity verification, AI classification, or organisation directory is connected."}
+
+@app.post("/api/environment/reports/{report_id}/claim")
+def claim_environment_report(report_id:int,body:Person):
+    with cm.connect() as c:
+        row=c.execute("SELECT * FROM environment_reports WHERE id=?",(report_id,)).fetchone()
+        if not row: raise HTTPException(404,"Report not found")
+        if row["status"]!="submitted": raise HTTPException(409,"This report has already been claimed or resolved")
+        c.execute("UPDATE environment_reports SET status='claimed',claimed_by_id=?,claimed_by_name=?,claimed_at=? WHERE id=? AND status='submitted'",(body.user_id,clean_text(body.display_name),cm.now(),report_id))
+        return {"id":report_id,"status":"claimed","claimed_by_name":clean_text(body.display_name)}
+
+@app.post("/api/environment/reports/{report_id}/resolve")
+def resolve_environment_report(report_id:int,body:EnvironmentResolve):
+    _require_uploaded_image(body.resolution_photo_url)
+    with cm.connect() as c:
+        row=c.execute("SELECT * FROM environment_reports WHERE id=?",(report_id,)).fetchone()
+        if not row: raise HTTPException(404,"Report not found")
+        if row["status"]!="claimed": raise HTTPException(409,"Claim this report before resolving it")
+        if row["claimed_by_id"]!=body.user_id: raise HTTPException(403,"Only the volunteer who claimed this report can resolve it")
+        note=clean_text(body.resolution_note or "")
+        c.execute("UPDATE environment_reports SET status='resolved',resolution_photo_url=?,resolution_note=?,resolved_at=?,points_awarded=30 WHERE id=?",(body.resolution_photo_url,note,cm.now(),report_id))
+        cm.award(c,body.user_id,clean_text(body.display_name),row["community_id"],"environment-report-resolution",str(report_id),30)
+        return {"id":report_id,"status":"resolved","points_awarded":30,"points_are_participation_only":True,"message":"Resolution photo saved. Points mark participation, not verified pollution reduction."}
 
 @app.get("/api/community/impact")
 def impact(community_id:Optional[int]=None):
