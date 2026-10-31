@@ -35,8 +35,9 @@ class CampusFlowTests(unittest.TestCase):
   self.assertEqual(student.post('/api/campus/campaigns',json={}).status_code,403)
   student_app=student.post('/api/campus/student-applications',data={'college_id':college_id,'official_email':'student@example.edu','details':'Student verification and campus details.'},files=self.document('student.pdf'))
   self.assertEqual(student_app.status_code,201,student_app.text); sid=student_app.json()['id']
+  self.assertEqual(student.get('/api/campus/my-applications').json()['student_applications'][0]['status'],'pending')
   self.assertEqual(student.post('/api/campus/campaigns',json={}).status_code,403)
-  decision=self.client.post(f'/api/campus/admin/student-applications/{sid}/decision',headers={'X-Admin-Token':campus.ADMIN},json={'decision':'approve'}); self.assertEqual(decision.status_code,200,decision.text); self.assertEqual(student.get('/api/campus/me').json()['role'],'student')
+  decision=self.client.post(f'/api/campus/admin/student-applications/{sid}/decision',headers={'X-Admin-Token':campus.ADMIN},json={'decision':'approve'}); self.assertEqual(decision.status_code,200,decision.text); self.assertEqual(student.get('/api/campus/me').json()['role'],'student'); self.assertEqual(student.get('/api/campus/my-applications').json()['student_applications'][0]['status'],'approved')
   campaign=student.post('/api/campus/campaigns',json={'college_id':college_id,'name':'Green Diwali Campus Week','description':'A student-led clean air awareness week.','category':'diwali awareness','objective':'Help students understand festival air quality.','city':'Delhi','starts_at':'2026-11-01','ends_at':'2026-11-10','activities':'Workshops and community outreach'})
   self.assertEqual(campaign.status_code,201,campaign.text); campaign_id=campaign.json()['id']
   uploaded=student.post(f'/api/campus/campaigns/{campaign_id}/image',files={'image':('campaign.png',b'\x89PNG\r\n\x1a\nphoto','image/png')}); self.assertEqual(uploaded.status_code,201,uploaded.text)

@@ -108,6 +108,14 @@ def logout(response:Response,vayu_session:Optional[str]=Cookie(default=None)):
 def me(user=Depends(current_user)):
     return {k:user[k] for k in ('id','email','name','role','status','created_at')}
 
+@router.get('/my-applications')
+def my_applications(user=Depends(current_user)):
+    """Return only the signed-in user's own application states."""
+    with db.connect() as c:
+        colleges=[dict(r) for r in c.execute("SELECT a.id,a.college_name,a.city,a.status,a.rejection_reason,a.submitted_at,c.id approved_college_id FROM college_applications a LEFT JOIN campus_colleges c ON c.application_id=a.id WHERE a.submitted_by=? ORDER BY a.submitted_at DESC",(user['id'],)).fetchall()]
+        students=[dict(r) for r in c.execute("SELECT a.id,a.college_id,c.name college_name,a.status,a.rejection_reason,a.submitted_at FROM student_applications a JOIN campus_colleges c ON c.id=a.college_id WHERE a.user_id=? ORDER BY a.submitted_at DESC",(user['id'],)).fetchall()]
+    return {'college_applications':colleges,'student_applications':students}
+
 @router.post('/college-applications',status_code=201)
 async def apply_college(college_name:str=Form(min_length=3,max_length=150),city:str=Form(min_length=2,max_length=100),official_email:str=Form(default='',max_length=254),representative:str=Form(min_length=2,max_length=100),contact:str=Form(min_length=5,max_length=80),club_details:str=Form(default='',max_length=1000),reason:str=Form(min_length=15,max_length=1000),focus:str=Form(default='[]',max_length=1000),document:UploadFile=File(...),user=Depends(current_user)):
     try: parsed=json.loads(focus)

@@ -1,30 +1,41 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f8f9fa">
-<title>VAYURAKSHAK AI — Understand your air. Protect your community.</title>
-<link rel="stylesheet" href="/static/core.css?v=campus3">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#173f35">
+<meta name="description" content="Understand air quality, report environmental concerns and coordinate local action with VAYURAKSHAK AI.">
+<title>VAYURAKSHAK AI — Understand Your Air. Protect Your Community.</title>
+<link rel="stylesheet" href="/static/core.css?v=community4">
 </head>
 <body>
 <aside class="rail">
-  <a class="brand" href="#home" aria-label="VAYURAKSHAK AI home"><span class="brand-mark" aria-hidden="true">◈</span><span><b>VAYURAKSHAK AI</b><small>Community air intelligence</small></span></a>
+  <a class="brand" href="#home" data-go="home" aria-label="VAYURAKSHAK AI home"><span class="brand-mark" aria-hidden="true">V</span><span><b>VAYURAKSHAK AI</b><small>Air intelligence · Community action</small></span></a>
   <nav id="nav" aria-label="Main navigation">
-    <button class="nav-item active" data-view="home"><span class="nav-icon">⌂</span>Home</button>
-    <button class="nav-item" data-view="community"><span class="nav-icon">⌖</span>Know Your Community</button>
-    <button class="nav-item" data-view="air"><span class="nav-icon">◉</span>AQI Prediction</button>
-    <button class="nav-item" data-view="myreports"><span class="nav-icon">▤</span>My Reports</button>
-    <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings</button>
+    <button class="nav-item active" data-view="home"><span class="nav-icon" aria-hidden="true">⌂</span>Home</button>
+    <button class="nav-item" data-view="air"><span class="nav-icon" aria-hidden="true">◉</span>AQI Intelligence</button>
+    <button class="nav-item" data-view="connect"><span class="nav-icon" aria-hidden="true">⌖</span>VAYU CONNECT</button>
+    <button class="nav-item" data-view="campus"><span class="nav-icon" aria-hidden="true">⌂</span>VAYU CAMPUS</button>
   </nav>
+  <div class="rail-utilities"><span class="rail-label">YOUR SPACE</span><button class="utility-nav" data-view="myreports">My Reports <span>→</span></button><button class="utility-nav" data-view="settings">Settings <span>→</span></button></div>
   <div class="rail-source"><span class="status-dot"></span><span>Air data</span><b id="provider-status">Loading</b></div>
 </aside>
 <main>
-  <header class="topbar"><div><div class="eyebrow" id="crumb">WELCOME</div><h1 id="title">Home</h1></div><div class="topbar-right"><span class="freshness" id="freshness">Loading latest data…</span><button class="icon-button" id="refresh" aria-label="Retry air-quality update" title="Retry">↻</button><span class="location-pill" id="location-label">⌖ Delhi</span></div></header>
+  <header class="topbar"><div><div class="eyebrow" id="crumb">AIR INTELLIGENCE · COMMUNITY ACTION</div><h1 id="title">Home</h1></div><div class="topbar-right"><div class="top-utilities"><button class="utility-chip" data-view="myreports">My Reports</button><button class="utility-chip" data-view="settings">Settings</button></div><span class="freshness" id="freshness">Loading latest data…</span><button class="icon-button" id="refresh" aria-label="Retry air-quality update" title="Retry">↻</button><span class="location-pill" id="location-label">⌖ Delhi</span></div></header>
   <section id="home-view" class="view">
-    <section class="hero"><div class="hero-copy"><div class="eyebrow">VAYURAKSHAK AI</div><h2>Understand Your Air.<br><em>Protect Your Community.</em></h2><p>Explore local air-quality information and help your community respond to environmental concerns.</p><div class="hero-actions"><button class="button button-primary" data-go="community">Know Your Community <span>→</span></button><button class="button button-secondary" data-go="air">AQI Prediction <span>→</span></button></div></div><div class="hero-air" id="home-air-summary" aria-live="polite"><div class="eyebrow">LATEST AVAILABLE AIR</div><div class="air-value">—</div><p>Loading current air information…</p></div></section>
-    <section class="home-radar"><div class="section-head"><div><div class="eyebrow">KNOW YOUR COMMUNITY</div><h2>Community Hazard Radar</h2><p>Environmental reports shared by community members.</p></div><button class="button button-primary" data-go="community">Open radar →</button></div><div class="report-preview" id="home-reports"><div class="empty-state compact">Loading community reports…</div></div><div class="home-footer-links"><button class="text-button" data-go="community">View reports and local groups →</button><button class="text-button" data-go="myreports">Track my reports →</button></div></section>
+    <section class="home-hero">
+      <div class="hero-image" role="img" aria-label="Illustration of an Indian neighbourhood moving from hazy air towards greener streets"><div class="hero-image-caption">CLEAN AIR IS A SHARED EFFORT <span>Illustrative artwork</span></div></div>
+      <div class="home-hero-copy"><div class="eyebrow">AIR INTELLIGENCE · COMMUNITY ACTION</div><h2>Understand Your Air.<br><em>Protect Your Community.</em></h2><p>From air-quality insights to neighbourhood action, discover environmental concerns and connect with people working towards cleaner communities.</p><div class="hero-actions"><button class="button button-primary" data-go="air">Explore Air Quality <span>→</span></button><button class="button button-secondary" data-go="connect">Take Community Action <span>→</span></button></div><div class="home-core-message">Knowing that air is polluted is not enough. Understanding it together helps communities act.</div></div>
+    </section>
+    <section class="home-air panel"><div class="home-air-heading"><div><div class="eyebrow">LATEST AVAILABLE</div><h2>Air near <span id="home-location">your configured location</span></h2></div><button class="text-button" data-go="air">Full air-quality view →</button></div><div id="home-air-summary" aria-live="polite"><div class="loading">Loading the latest available air information…</div></div></section>
+    <section class="pillar-section"><div class="section-intro"><div class="eyebrow">ONE PLATFORM · THREE CONNECTED PILLARS</div><h2>Understand. Connect. Act.</h2><p>Environmental information becomes more useful when communities can respond together.</p></div><div class="pillar-grid">
+      <article class="pillar-card"><div class="pillar-art art-air" role="img" aria-label="Illustrative air-quality trend lines"></div><div class="pillar-card-copy"><span class="eyebrow">01 · AQI INTELLIGENCE</span><h3>See the Air Beyond the Numbers.</h3><p>Explore available air-quality readings, forecasts, pollution trends and historical Diwali comparisons.</p><button class="text-button" data-go="air">Explore Air Quality <span>→</span></button></div></article>
+      <article class="pillar-card"><div class="pillar-art art-connect" role="img" aria-label="Illustration of neighbours caring for their local green space"></div><div class="pillar-card-copy"><span class="eyebrow">02 · VAYU CONNECT</span><h3>Your Neighbourhood. Your Voice.</h3><p>Report environmental concerns, discover local issues and join community-led action.</p><button class="text-button" data-go="connect">Join VAYU CONNECT <span>→</span></button></div></article>
+      <article class="pillar-card"><div class="pillar-art art-campus" role="img" aria-label="Illustration of students taking part in a campus environment activity"></div><div class="pillar-card-copy"><span class="eyebrow">03 · VAYU CAMPUS</span><h3>Students Can Change the Air We Breathe.</h3><p>Connect colleges, coordinate reviewed campaigns and contribute structured observations.</p><button class="text-button" data-go="campus">Explore VAYU CAMPUS <span>→</span></button></div></article>
+    </div></section>
+    <section class="home-community panel"><div class="home-air-heading"><div><div class="eyebrow">FROM THE COMMUNITY</div><h2>Local reports & approved activities</h2></div><button class="text-button" data-go="connect">Open VAYU CONNECT →</button></div><div class="community-preview-grid" id="home-community-preview"><div class="loading">Checking for recent community activity…</div></div></section>
+    <footer class="home-footer"><span>VAYURAKSHAK AI</span><span>Observed data, model estimates and forecasts are labelled separately.</span><button class="text-button" data-view="myreports">Track your reports →</button></footer>
   </section>
   <section id="detail" class="view detail-view" style="display:none"></section>
 </main>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="/static/community.js?v=campus3"></script>
+<script src="/static/community.js?v=community4"></script>
 </body></html>

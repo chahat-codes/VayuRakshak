@@ -18,7 +18,9 @@ class CoreAppTests(unittest.TestCase):
         return self.client.post('/api/environment/reports',json=payload)
     def test_home_and_removed_features(self):
         r=self.client.get('/'); self.assertEqual(r.status_code,200)
-        for label in ('Know Your Community','AQI Prediction','My Reports','Settings'): self.assertIn(label,r.text)
+        for label in ('AQI Intelligence','VAYU CONNECT','VAYU CAMPUS','My Reports','Settings','Understand Your Air.','Protect Your Community.'): self.assertIn(label,r.text)
+        self.assertIn('hero-image',r.text); self.assertIn('pillar-grid',r.text)
+        for pillar in ('hero-neighbourhood.svg','air-intelligence.svg','connect-community.svg','campus-action.svg'): self.assertEqual(self.client.get('/static/images/'+pillar).status_code,200,pillar)
         for old in ('Diwali Planner','What If','Green Community','My Progress'): self.assertNotIn(old,r.text)
         for path in ('/api/simulate','/api/alerts','/api/community/challenges','/api/community/feed','/api/community/impact'):
             self.assertEqual(self.client.get(path).status_code,404,path)
