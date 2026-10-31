@@ -59,7 +59,7 @@ async def latest():
         tomorrow_date=(now.date()+timedelta(days=1)).isoformat()
         tomorrow_values=[float(x["pm25"]) for x in future if local_time(x["timestamp"]).date().isoformat()==tomorrow_date]
         tomorrow_forecast={"date":tomorrow_date,"pm25_mean":sum(tomorrow_values)/len(tomorrow_values),"pm25_min":min(tomorrow_values),"pm25_max":max(tomorrow_values),"hours":len(tomorrow_values)} if tomorrow_values else None
-        return {"provider":"Open-Meteo Air Quality API","source":"Open-Meteo Air Quality API","data_kind":"estimated","location":LOCATION,"latitude":LAT,"longitude":LON,"timezone":str(local_zone),"retrieved_at":datetime.now(timezone.utc).isoformat(),"provider_status":"available","current":current,"series":vals[-48:],"forecast":future,"tomorrow_forecast":tomorrow_forecast,"status":"available","label":"Estimated · Open-Meteo modelled grid; not a monitoring station measurement","aqi":None}
+        return {"provider":"Open-Meteo Air Quality API","source":"Open-Meteo Air Quality API","data_kind":"estimated","location":LOCATION,"latitude":LAT,"longitude":LON,"timezone":str(local_zone),"retrieved_at":datetime.now(timezone.utc).isoformat(),"provider_status":"available","current":current,"series":previous[-48:],"forecast":future,"tomorrow_forecast":tomorrow_forecast,"status":"available","label":"Estimated · Open-Meteo modelled grid; not a monitoring station measurement","aqi":None}
     except Exception:
         rows=read_rows(); latest_row=rows[-1] if rows else None
         if latest_row:
