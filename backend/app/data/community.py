@@ -63,11 +63,15 @@ def init():
           points_awarded INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS report_status_history(id INTEGER PRIMARY KEY,report_id INTEGER NOT NULL REFERENCES environment_reports(id) ON DELETE CASCADE,status TEXT NOT NULL,actor_id TEXT,actor_name TEXT,note TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS points(id INTEGER PRIMARY KEY,user_id TEXT NOT NULL,display_name TEXT NOT NULL,community_id INTEGER REFERENCES communities(id) ON DELETE SET NULL,source_type TEXT NOT NULL,source_id TEXT NOT NULL,points INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(user_id,source_type,source_id));
         """)
         columns={row[1] for row in c.execute("PRAGMA table_info(environment_reports)")}
         if "action_started_at" not in columns:
             c.execute("ALTER TABLE environment_reports ADD COLUMN action_started_at TEXT")
+        # Older MVP records used “resolved” for volunteer-submitted proof. They were not independently verified.
+        c.execute("UPDATE environment_reports SET status='resolution_submitted' WHERE status='resolved'")
+        c.execute("INSERT INTO report_status_history(report_id,status,actor_id,actor_name,note,created_at) SELECT r.id,r.status,r.reporter_id,r.reporter_name,'Existing report; earlier status history was not recorded',r.created_at FROM environment_reports r WHERE NOT EXISTS (SELECT 1 FROM report_status_history h WHERE h.report_id=r.id)")
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def pack(row): return dict(row) if row else None

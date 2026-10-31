@@ -202,13 +202,19 @@ class CommentCreate(Person): post_id:int; content:str=Field(min_length=2,max_len
 class LikeCreate(Person): post_id:int
 class ReportCreate(Person): kind:str=Field(pattern=r"^(post|comment)$"); item_id:int; reason:str=Field(min_length=4,max_length=240)
 class EnvironmentReportCreate(Person):
-    category:Literal["garbage","waste_burning","smoke","other"]
+    category:Literal["garbage","waste_burning","smoke","construction_dust","other"]
     description:str=Field(min_length=8,max_length=500)
     city:str=Field(min_length=2,max_length=80)
     latitude:Optional[float]=Field(default=None,ge=-90,le=90)
     longitude:Optional[float]=Field(default=None,ge=-180,le=180)
-    photo_url:str=Field(pattern=r"^/uploads/[a-f0-9]{32}\.(jpg|png|webp)$",max_length=50)
+    photo_url:Optional[str]=Field(default=None,pattern=r"^/uploads/[a-f0-9]{32}\.(jpg|png|webp)$",max_length=50)
     community_id:Optional[int]=None
+class EnvironmentSimilar(BaseModel):
+    category:Literal["garbage","waste_burning","smoke","construction_dust","other"]
+    description:str=Field(min_length=8,max_length=500)
+    city:str=Field(min_length=2,max_length=80)
+    latitude:Optional[float]=Field(default=None,ge=-90,le=90)
+    longitude:Optional[float]=Field(default=None,ge=-180,le=180)
 class EnvironmentResolve(Person):
     resolution_photo_url:str=Field(pattern=r"^/uploads/[a-f0-9]{32}\.(jpg|png|webp)$",max_length=50)
     resolution_note:Optional[str]=Field(default=None,max_length=300)
@@ -396,11 +402,43 @@ def _require_uploaded_image(url):
     if not match or not (UPLOADS/match.group(1)).is_file():
         raise HTTPException(422,"Upload a JPG, PNG, or WebP photo first")
 
+def _record_environment_status(c,report_id,status,actor_id=None,actor_name=None,note=""):
+    c.execute("INSERT INTO report_status_history(report_id,status,actor_id,actor_name,note,created_at) VALUES(?,?,?,?,?,?)",(report_id,status,actor_id,actor_name,clean_text(note),cm.now()))
+
+def _environment_report(row,history=False,private=False):
+    data=dict(row); data["reference"]=f"VAYU-{data['id']:06d}"
+    if data.get("latitude") is not None: data["latitude"]=round(float(data["latitude"]),2)
+    if data.get("longitude") is not None: data["longitude"]=round(float(data["longitude"]),2)
+    if not private:
+        data.pop("reporter_id",None); data.pop("reporter_name",None); data.pop("claimed_by_name",None)
+    if history:
+        with cm.connect() as c:
+            events=c.execute("SELECT status,actor_name,note,created_at FROM report_status_history WHERE report_id=? ORDER BY id",(data["id"],)).fetchall()
+        data["history"]=[dict(x) if private else {k:v for k,v in dict(x).items() if k not in ("actor_id","actor_name")} for x in events]
+    return data
+
+@app.post("/api/environment/reports/similar")
+def similar_environment_reports(body:EnvironmentSimilar):
+    city=clean_text(body.city).casefold(); incoming={x for x in re.findall(r"[a-z0-9]+",body.description.casefold()) if len(x)>2}; cutoff=(datetime.now(timezone.utc)-timedelta(days=30)).isoformat()
+    with cm.connect() as c:
+        rows=c.execute("SELECT id,category,description,status,created_at,latitude,longitude FROM environment_reports WHERE lower(city)=? AND category=? AND created_at>=? AND status NOT IN ('resolution_submitted','resolved') ORDER BY created_at DESC LIMIT 100",(city,body.category,cutoff)).fetchall()
+    matches=[]
+    for row in rows:
+        existing={x for x in re.findall(r"[a-z0-9]+",row["description"].casefold()) if len(x)>2}
+        overlap=len(incoming&existing)/max(1,len(incoming|existing))
+        close=False
+        if body.latitude is not None and body.longitude is not None and row["latitude"] is not None and row["longitude"] is not None:
+            km=math.hypot((body.latitude-row["latitude"])*111,(body.longitude-row["longitude"])*111*math.cos(math.radians(body.latitude)))
+            close=km<=1.0
+        if overlap>=0.24 or close:
+            matches.append({"reference":f"VAYU-{row['id']:06d}","status":row["status"],"created_at":row["created_at"]})
+    return {"matches":matches[:3],"basis":"same city and category with overlapping description words or coordinates within about 1 km","automatic_merge":False}
+
 @app.post("/api/environment/reports",status_code=201)
 def create_environment_report(body:EnvironmentReportCreate):
     if (body.latitude is None) != (body.longitude is None):
         raise HTTPException(422,"Provide both map coordinates or leave both blank")
-    _require_uploaded_image(body.photo_url)
+    if body.photo_url: _require_uploaded_image(body.photo_url)
     city=clean_text(body.city)
     with cm.connect() as c:
         if body.community_id is not None:
@@ -410,9 +448,12 @@ def create_environment_report(body:EnvironmentReportCreate):
         cur=c.execute("""INSERT INTO environment_reports
             (reporter_id,reporter_name,category,description,city,latitude,longitude,photo_url,community_id,created_at)
             VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (body.user_id,clean_text(body.display_name),body.category,clean_text(body.description),city,body.latitude,body.longitude,body.photo_url,body.community_id,cm.now()))
-        row=c.execute("SELECT * FROM environment_reports WHERE id=?",(cur.lastrowid,)).fetchone()
-        return {**dict(row),"ai_classification":"unavailable","message":"Report submitted. Category is user-selected; AI classification is not connected."}
+            (body.user_id,clean_text(body.display_name),body.category,clean_text(body.description),city,body.latitude,body.longitude,body.photo_url or "",body.community_id,cm.now()))
+        report_id=cur.lastrowid; _record_environment_status(c,report_id,"submitted",body.user_id,clean_text(body.display_name),"Report created")
+        row=c.execute("SELECT * FROM environment_reports WHERE id=?",(report_id,)).fetchone()
+        result=_environment_report(row,private=True)
+        result.update({"ai_classification":"unavailable","message":"Report submitted. Category is user-selected; AI classification is not connected."})
+        return result
 
 @app.get("/api/environment/reports")
 def list_environment_reports(city:Optional[str]=None):
@@ -421,7 +462,20 @@ def list_environment_reports(city:Optional[str]=None):
             rows=c.execute("SELECT * FROM environment_reports WHERE lower(city)=lower(?) ORDER BY created_at DESC LIMIT 100",(city.strip(),)).fetchall()
         else:
             rows=c.execute("SELECT * FROM environment_reports ORDER BY created_at DESC LIMIT 100").fetchall()
-        return {"reports":[dict(row) for row in rows],"count":len(rows),"ai_classification":"unavailable","nearby_organisations":"unavailable","note":"Names and locations are user-supplied. No login, identity verification, AI classification, or organisation directory is connected."}
+        return {"reports":[_environment_report(row) for row in rows],"count":len(rows),"ai_classification":"unavailable","nearby_organisations":"unavailable","note":"Names and locations are user-supplied. No login, identity verification, AI classification, or organisation directory is connected."}
+
+@app.get("/api/environment/reports/mine")
+def my_environment_reports(user_id:str=Query(min_length=8,max_length=80,pattern=r"^[a-zA-Z0-9_-]+$")):
+    with cm.connect() as c:
+        rows=c.execute("SELECT * FROM environment_reports WHERE reporter_id=? ORDER BY created_at DESC LIMIT 100",(user_id,)).fetchall()
+    return {"reports":[_environment_report(row,True,True) for row in rows],"count":len(rows),"identity_note":"Tracking uses this browser’s pseudonymous profile ID; no account authentication is available."}
+
+@app.get("/api/environment/reports/{report_id}")
+def get_environment_report(report_id:int):
+    with cm.connect() as c:
+        row=c.execute("SELECT * FROM environment_reports WHERE id=?",(report_id,)).fetchone()
+    if not row: raise HTTPException(404,"Report not found")
+    return _environment_report(row,True)
 
 @app.post("/api/environment/reports/{report_id}/claim")
 def claim_environment_report(report_id:int,body:Person):
@@ -430,6 +484,7 @@ def claim_environment_report(report_id:int,body:Person):
         if not row: raise HTTPException(404,"Report not found")
         if row["status"]!="submitted": raise HTTPException(409,"This report has already been claimed or resolved")
         c.execute("UPDATE environment_reports SET status='claimed',claimed_by_id=?,claimed_by_name=?,claimed_at=? WHERE id=? AND status='submitted'",(body.user_id,clean_text(body.display_name),cm.now(),report_id))
+        _record_environment_status(c,report_id,"claimed",body.user_id,clean_text(body.display_name),"Volunteer accepted report")
         return {"id":report_id,"status":"claimed","claimed_by_name":clean_text(body.display_name)}
 
 @app.post("/api/environment/reports/{report_id}/start")
@@ -440,6 +495,7 @@ def start_environment_action(report_id:int,body:Person):
         if row["status"]!="claimed": raise HTTPException(409,"Only an accepted report can move to action started")
         if row["claimed_by_id"]!=body.user_id: raise HTTPException(403,"Only the volunteer who accepted this report can start the action")
         c.execute("UPDATE environment_reports SET status='action_started',action_started_at=? WHERE id=? AND status='claimed'",(cm.now(),report_id))
+        _record_environment_status(c,report_id,"action_started",body.user_id,clean_text(body.display_name),"Action reported as started")
         return {"id":report_id,"status":"action_started"}
 
 @app.post("/api/environment/reports/{report_id}/resolve")
@@ -452,6 +508,7 @@ def resolve_environment_report(report_id:int,body:EnvironmentResolve):
         if row["claimed_by_id"]!=body.user_id: raise HTTPException(403,"Only the volunteer who claimed this report can resolve it")
         note=clean_text(body.resolution_note or "")
         c.execute("UPDATE environment_reports SET status='resolution_submitted',resolution_photo_url=?,resolution_note=?,resolved_at=?,points_awarded=30 WHERE id=?",(body.resolution_photo_url,note,cm.now(),report_id))
+        _record_environment_status(c,report_id,"resolution_submitted",body.user_id,clean_text(body.display_name),"Resolution evidence submitted; awaiting review")
         cm.award(c,body.user_id,clean_text(body.display_name),row["community_id"],"environment-report-resolution",str(report_id),30)
         return {"id":report_id,"status":"resolution_submitted","independently_verified":False,"points_awarded":30,"points_are_participation_only":True,"message":"Resolution proof submitted for community review. This MVP has no independent verification; points mark participation only."}
 

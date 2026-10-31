@@ -19,7 +19,9 @@ The MVP focuses on a feasible, transparent end-to-end product slice:
 - **Home and air check:** Show the latest available PM₂.₅ estimate, explain that it is modelled, and label forecast information as a prediction. AQI remains unavailable when the source does not provide valid AQI.
 - **Diwali comparison:** Select a city, station, two or more years, and equal-sized windows before and after Diwali. Compare PM₂.₅, PM₁₀, and AQI only when present. Charts and tables expose period coverage, source, station, date range, and missing observations.
 - **Data import:** Validate general observation CSVs and historical daily station CSVs separately. The historical importer rejects future dates, invalid pollutant values, and invalid AQI values; duplicate station/day records do not overwrite existing observations.
-- **Community:** Local groups, pledges, challenges, events, and posts support participation. Points record participation only; they do not measure pollution reduction.
+- **Know your community:** A community hazard radar, environmental issue reporting, city-matched groups, missions, events, and report tracking. Reports receive a `VAYU-000001` reference and a timestamped status history.
+- **AQI prediction:** Open-Meteo PM₂.₅/PM₁₀ estimates and forecasts are shown separately from imported station observations. AQI is not calculated from PM values.
+- **Community participation:** Local groups, pledges, challenges, events, and posts remain available. Points record participation only; they do not measure pollution reduction.
 - **Transparency:** Source labels, unavailable states, descriptive summaries, and model limitations are visible in the interface and documentation.
 
 ### Why this MVP is distinct and feasible
@@ -28,7 +30,17 @@ The product puts data honesty in the main user flow: it distinguishes model esti
 
 ### Out of scope for this MVP
 
-There is no live CPCB station/API integration, verified national historical dataset, AQI calculation engine, authenticated user system, staffed moderation operation, operational pollution alerting, or validated causal digital twin. The station view lists imported station metadata; it is not a live geospatial pollution map. Unsupported intervention scenarios are rejected instead of being given invented results.
+There is no live CPCB station/API integration, verified national historical dataset, AQI calculation engine, authenticated user system, staffed moderation operation, operational pollution alerting, verified organisation directory, or validated causal digital twin. Community issue locations are rounded to about 1 km in public views; the station/report explorer is a local coordinate plot without a street basemap. No external map service receives report coordinates. Unsupported intervention scenarios are rejected instead of being given invented results.
+
+## Community reporting workflow
+
+- Submit an issue with a category, city, short description, optional photo, and optional browser location. Active fires or hazardous materials should be referred to local emergency services; volunteers should not intervene.
+- The description may receive a transparent keyword hint. This is not AI and does not inspect photos. The user chooses the final category.
+- A similar-report suggestion uses city, category, description-word overlap, and approximate distance. It never merges reports automatically.
+- Reports move through **Submitted → Under review → Action reported → Resolution evidence submitted**. Resolution evidence is not independently verified; the app has no staffed review or account authentication.
+- **My Reports** tracks records for the pseudonymous ID stored in the current browser. This is convenient tracking, not secure authentication.
+- Groups are user-created and matched by exact city. No official complaint channels or organisation directory are connected.
+- The hazard explorer plots actual report and station coordinates locally, rounds public report locations, supports category/layer filters, and does not call an external basemap. It is a coordinate plot, not a street map.
 
 ## Architecture
 
@@ -63,7 +75,7 @@ See [docs/architecture.md](docs/architecture.md) for component responsibilities,
 
 ## Technology
 
-- **Frontend:** Static HTML, CSS, and browser JavaScript; responsive layouts; SVG for the Diwali comparison chart.
+- **Frontend:** Static HTML, CSS, and browser JavaScript; responsive civic dashboard; SVG for the Diwali comparison chart and local coordinate plot.
 - **Backend:** Python 3.10+ and FastAPI, served locally with Uvicorn.
 - **External air data:** Open-Meteo Air Quality API for modelled grid estimates and provider forecasts.
 - **Persistence:** CSV for general imported observations; SQLite for historical Diwali observations and community activity.
