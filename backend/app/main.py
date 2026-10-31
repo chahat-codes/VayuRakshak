@@ -432,18 +432,28 @@ def claim_environment_report(report_id:int,body:Person):
         c.execute("UPDATE environment_reports SET status='claimed',claimed_by_id=?,claimed_by_name=?,claimed_at=? WHERE id=? AND status='submitted'",(body.user_id,clean_text(body.display_name),cm.now(),report_id))
         return {"id":report_id,"status":"claimed","claimed_by_name":clean_text(body.display_name)}
 
+@app.post("/api/environment/reports/{report_id}/start")
+def start_environment_action(report_id:int,body:Person):
+    with cm.connect() as c:
+        row=c.execute("SELECT * FROM environment_reports WHERE id=?",(report_id,)).fetchone()
+        if not row: raise HTTPException(404,"Report not found")
+        if row["status"]!="claimed": raise HTTPException(409,"Only an accepted report can move to action started")
+        if row["claimed_by_id"]!=body.user_id: raise HTTPException(403,"Only the volunteer who accepted this report can start the action")
+        c.execute("UPDATE environment_reports SET status='action_started',action_started_at=? WHERE id=? AND status='claimed'",(cm.now(),report_id))
+        return {"id":report_id,"status":"action_started"}
+
 @app.post("/api/environment/reports/{report_id}/resolve")
 def resolve_environment_report(report_id:int,body:EnvironmentResolve):
     _require_uploaded_image(body.resolution_photo_url)
     with cm.connect() as c:
         row=c.execute("SELECT * FROM environment_reports WHERE id=?",(report_id,)).fetchone()
         if not row: raise HTTPException(404,"Report not found")
-        if row["status"]!="claimed": raise HTTPException(409,"Claim this report before resolving it")
+        if row["status"]!="action_started": raise HTTPException(409,"Start the action before submitting resolution proof")
         if row["claimed_by_id"]!=body.user_id: raise HTTPException(403,"Only the volunteer who claimed this report can resolve it")
         note=clean_text(body.resolution_note or "")
-        c.execute("UPDATE environment_reports SET status='resolved',resolution_photo_url=?,resolution_note=?,resolved_at=?,points_awarded=30 WHERE id=?",(body.resolution_photo_url,note,cm.now(),report_id))
+        c.execute("UPDATE environment_reports SET status='resolution_submitted',resolution_photo_url=?,resolution_note=?,resolved_at=?,points_awarded=30 WHERE id=?",(body.resolution_photo_url,note,cm.now(),report_id))
         cm.award(c,body.user_id,clean_text(body.display_name),row["community_id"],"environment-report-resolution",str(report_id),30)
-        return {"id":report_id,"status":"resolved","points_awarded":30,"points_are_participation_only":True,"message":"Resolution photo saved. Points mark participation, not verified pollution reduction."}
+        return {"id":report_id,"status":"resolution_submitted","independently_verified":False,"points_awarded":30,"points_are_participation_only":True,"message":"Resolution proof submitted for community review. This MVP has no independent verification; points mark participation only."}
 
 @app.get("/api/community/impact")
 def impact(community_id:Optional[int]=None):
@@ -455,7 +465,12 @@ def impact(community_id:Optional[int]=None):
         eventcount=c.execute("SELECT count(*) FROM events WHERE 1=1"+filt,args).fetchone()[0]
         participants=c.execute("SELECT count(*) FROM event_participants p JOIN events e ON e.id=p.event_id WHERE 1=1"+(" AND e.community_id=?" if community_id else ""),args).fetchone()[0]
         points=c.execute("SELECT coalesce(sum(points),0) FROM points WHERE 1=1"+filt,args).fetchone()[0]
-        return {"members":members,"pledges":pledges,"completed_challenges":challenges,"events_organised":eventcount,"event_participations":participants,"points_earned":points,"note":"Participation counts only; these figures do not measure or imply pollution reduction."}
+        report_filter=" AND community_id=?" if community_id else ""
+        report_args=(community_id,) if community_id else ()
+        issue_count=c.execute("SELECT count(*) FROM environment_reports WHERE 1=1"+report_filter,report_args).fetchone()[0]
+        action_count=c.execute("SELECT count(*) FROM environment_reports WHERE status IN ('action_started','resolution_submitted')"+report_filter,report_args).fetchone()[0]
+        resolution_submissions=c.execute("SELECT count(*) FROM environment_reports WHERE status='resolution_submitted'"+report_filter,report_args).fetchone()[0]
+        return {"members":members,"pledges":pledges,"completed_challenges":challenges,"events_organised":eventcount,"event_participations":participants,"points_earned":points,"environment_reports":issue_count,"actions_started":action_count,"resolution_submissions":resolution_submissions,"independently_verified_resolutions":0,"note":"Reports, actions, and proof submissions are user supplied and not independently verified. Participation counts do not measure pollution reduction."}
 
 @app.post("/api/community/uploads",status_code=201)
 async def upload_post_image(file:UploadFile=File(...)):

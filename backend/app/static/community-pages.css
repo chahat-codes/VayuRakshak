@@ -52,3 +52,5 @@ footer{border-color:#38283e;color:#ad9daf}footer b,footer button{color:#e0bf82}#
 .environment-report-card>p{font-size:11px;line-height:1.55;color:#e1d4df}.environment-report-card>small,.resolution-proof small{display:block;margin:6px 0;color:#b6a8b6;font-size:9px;line-height:1.5;overflow-wrap:anywhere}
 .environment-report-card>.btn{margin-top:10px}.environment-report-card .control{width:100%;background:#19121f;color:#f5ebdf;border-color:#49364e}.environment-report-card .resolution-photo-label{margin-top:10px}.resolution-proof{margin-top:10px;padding-top:6px;border-top:1px solid #493548}
 @media(max-width:650px){.environment-form,.environment-report-list{grid-template-columns:1fr}.environment-form>label,.environment-form>.environment-location,.environment-form>.environment-ai-note,.environment-form>.environment-privacy,.environment-form>button{grid-column:1}.environment-reports-title{gap:8px}.environment-points{white-space:normal}}
+
+.environment-honesty{background:#35251f;border:1px solid #634a40;color:#e8c991}.environment-report-card .data-kind.unavailable{color:#c4b6c5;background:#302431;border-color:#514050}

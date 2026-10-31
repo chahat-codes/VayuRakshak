@@ -56,6 +56,7 @@ def init():
           claimed_by_id TEXT,
           claimed_by_name TEXT,
           claimed_at TEXT,
+          action_started_at TEXT,
           resolution_photo_url TEXT,
           resolution_note TEXT,
           resolved_at TEXT,
@@ -64,6 +65,9 @@ def init():
         );
         CREATE TABLE IF NOT EXISTS points(id INTEGER PRIMARY KEY,user_id TEXT NOT NULL,display_name TEXT NOT NULL,community_id INTEGER REFERENCES communities(id) ON DELETE SET NULL,source_type TEXT NOT NULL,source_id TEXT NOT NULL,points INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(user_id,source_type,source_id));
         """)
+        columns={row[1] for row in c.execute("PRAGMA table_info(environment_reports)")}
+        if "action_started_at" not in columns:
+            c.execute("ALTER TABLE environment_reports ADD COLUMN action_started_at TEXT")
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def pack(row): return dict(row) if row else None
