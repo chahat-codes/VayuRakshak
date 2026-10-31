@@ -43,24 +43,28 @@ async def latest():
     try:
         async with httpx.AsyncClient(timeout=8) as client: res=await client.get(url,params=params); res.raise_for_status(); payload=res.json()
         hourly=payload.get("hourly",{}); vals=[]
-        for i,stamp in enumerate(hourly.get("time",[])):
-            a=hourly.get("pm2_5",[]); b=hourly.get("pm10",[])
-            if i<len(a) and i<len(b) and a[i] is not None and b[i] is not None:
-                vals.append({"timestamp":stamp,"pm25":a[i],"pm10":b[i],"kind":"modelled_grid_estimate","aqi":None})
         local_zone=ZoneInfo(payload.get("timezone") or "Asia/Kolkata")
         now=datetime.now(local_zone)
         def local_time(stamp):
             value=datetime.fromisoformat(stamp)
             return value.replace(tzinfo=local_zone) if value.tzinfo is None else value.astimezone(local_zone)
-        current=min(vals,key=lambda x:abs((local_time(x["timestamp"])-now).total_seconds())) if vals else None
+        for i,stamp in enumerate(hourly.get("time",[])):
+            a=hourly.get("pm2_5",[]); b=hourly.get("pm10",[])
+            if i<len(a) and i<len(b) and a[i] is not None and b[i] is not None:
+                kind="forecast" if local_time(stamp)>=now else "estimated"
+                vals.append({"timestamp":stamp,"pm25":a[i],"pm10":b[i],"kind":kind,"source":"Open-Meteo Air Quality API","location":LOCATION,"aqi":None})
+        previous=[x for x in vals if local_time(x["timestamp"])<=now]
+        current=max(previous,key=lambda x:local_time(x["timestamp"])) if previous else (min(vals,key=lambda x:abs((local_time(x["timestamp"])-now).total_seconds())) if vals else None)
         future=[x for x in vals if local_time(x["timestamp"])>=now]
         tomorrow_date=(now.date()+timedelta(days=1)).isoformat()
         tomorrow_values=[float(x["pm25"]) for x in future if local_time(x["timestamp"]).date().isoformat()==tomorrow_date]
         tomorrow_forecast={"date":tomorrow_date,"pm25_mean":sum(tomorrow_values)/len(tomorrow_values),"pm25_min":min(tomorrow_values),"pm25_max":max(tomorrow_values),"hours":len(tomorrow_values)} if tomorrow_values else None
-        return {"provider":"Open-Meteo Air Quality API","location":LOCATION,"latitude":LAT,"longitude":LON,"timezone":str(local_zone),"retrieved_at":datetime.now(timezone.utc).isoformat(),"current":current,"series":vals[-48:],"forecast":future,"tomorrow_forecast":tomorrow_forecast,"status":"available","label":"Modelled grid estimate; not a monitoring station measurement","aqi":None}
-    except Exception as e:
+        return {"provider":"Open-Meteo Air Quality API","source":"Open-Meteo Air Quality API","data_kind":"estimated","location":LOCATION,"latitude":LAT,"longitude":LON,"timezone":str(local_zone),"retrieved_at":datetime.now(timezone.utc).isoformat(),"provider_status":"available","current":current,"series":vals[-48:],"forecast":future,"tomorrow_forecast":tomorrow_forecast,"status":"available","label":"Estimated · Open-Meteo modelled grid; not a monitoring station measurement","aqi":None}
+    except Exception:
         rows=read_rows(); latest_row=rows[-1] if rows else None
-        return {"provider":"Open-Meteo Air Quality API","location":LOCATION,"current":latest_row,"series":[],"forecast":[],"status":"unavailable","error":"Provider request failed. Check connection and try again.","aqi":None,"label":"Imported observations" if latest_row else "No provider data or imported observations available"}
+        if latest_row:
+            latest_row={**latest_row,"kind":"observed","source":"User-imported observations","location":LOCATION}
+        return {"provider":"Open-Meteo Air Quality API","source":"User-imported observations" if latest_row else None,"data_kind":"observed" if latest_row else "unavailable","location":LOCATION,"current":latest_row,"series":[],"forecast":[],"tomorrow_forecast":None,"status":"available" if latest_row else "unavailable","provider_status":"unavailable","error":"Provider request failed. Check connection and try again.","aqi":None,"label":"Observed · imported CSV" if latest_row else "No provider data or imported observations available"}
 
 @app.get("/api/forecast")
 async def forecast(hours:int=Query(default=24,ge=1,le=48)):
@@ -130,7 +134,11 @@ def historical_diwali_dates():
 
 @app.get("/api/historical/coverage")
 def historical_coverage():
-    return {"observations":(observations:=hist.catalog()),"records_loaded":sum(x["records"] for x in observations),"note":"Only daily records imported into this local app appear here. The selected source pages do not establish PM2.5/PM10/AQI coverage for 2022–2026."}
+    observations=hist.catalog()
+    records=sum(item["records"] for item in observations)
+    metric_counts={metric:sum(item[f"{metric}_days"] for item in observations) for metric in hist.METRICS}
+    available_years=sorted({year for item in observations for year in item["available_diwali_years"]})
+    return {"observations":observations,"records_loaded":records,"city_station_pairs":len(observations),"metric_days":metric_counts,"available_diwali_years":available_years,"data_kind":"observed","pm_unit":hist.CONCENTRATION_UNIT,"status":"available" if records else "empty","note":"Only user-imported daily station records appear here. Source labels are uploader-supplied, not independently verified."}
 
 @app.get("/api/historical/diwali")
 def historical_diwali(city:str,station:str,years:str,days:int=Query(default=3,ge=1,le=7)):
@@ -140,46 +148,40 @@ def historical_diwali(city:str,station:str,years:str,days:int=Query(default=3,ge
     try: return hist.compare(city.strip(),station.strip(),selected,days)
     except ValueError as e: raise HTTPException(422,str(e))
 
-@app.post("/api/historical/import")
-async def import_historical_csv(file:UploadFile=File(...),source_name:str=Form(...),source_url:Optional[str]=Form(default=None)):
+def _read_historical_upload(file_bytes,source_name,source_url,unit):
+    try:
+        parsed=hist.validate_csv(file_bytes,source_name,source_url,unit)
+    except ValueError as e:
+        raise HTTPException(422,str(e))
+    database_keys=hist.existing_keys()
+    duplicate_existing=sum(1 for row in parsed["rows"] if hist.observation_key(row["city"],row["station"],row["date"]) in database_keys)
+    return parsed,duplicate_existing
+
+@app.post("/api/historical/validate")
+async def validate_historical_csv(file:UploadFile=File(...),source_name:str=Form(...),source_url:Optional[str]=Form(default=None),unit:str=Form(default="ug/m3")):
     if not file.filename or not file.filename.lower().endswith(".csv"): raise HTTPException(415,"Upload a CSV file")
-    if not source_name.strip(): raise HTTPException(422,"Enter the source name")
     raw=await file.read(10_000_001)
     if len(raw)>10_000_000: raise HTTPException(413,"Maximum file size is 10 MB")
-    try: rows=list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
-    except Exception: raise HTTPException(400,"Could not read CSV as UTF-8")
-    if not rows: raise HTTPException(422,"CSV has no rows")
-    fields=set(rows[0]); date_field="date" if "date" in fields else "timestamp" if "timestamp" in fields else None
-    if not date_field or not {"city","station"}.issubset(fields): raise HTTPException(422,"Required columns: date (or timestamp), city, station; at least one of pm25, pm10, aqi")
-    clean=[]; rejected=0; seen=set(); cutoff=hist.today()
-    for row in rows:
-        try:
-            day=date.fromisoformat(str(row.get(date_field,""))[:10])
-            city_value=" ".join(str(row.get("city","")).split())[:100]
-            station_value=" ".join(str(row.get("station","")).split())[:150]
-            if not city_value or not station_value or day>cutoff: raise ValueError()
-            vals={}
-            for key in ("pm25","pm10","aqi"):
-                raw_value=row.get(key)
-                vals[key]=float(raw_value) if raw_value not in (None,"") else None
-                if vals[key] is not None and (not math.isfinite(vals[key]) or vals[key]<0): raise ValueError()
-            if vals["aqi"] is not None and (vals["aqi"]>500 or not vals["aqi"].is_integer()): raise ValueError()
-            if all(vals[k] is None for k in vals): raise ValueError()
-            source=" ".join(str(row.get("source_name") or source_name).split())[:200]
-            url=(row.get("source_url") or source_url or "").strip()[:500] or None
-            key=(city_value.casefold(),station_value.casefold(),day.isoformat())
-            if key in seen: rejected+=1; continue
-            seen.add(key)
-            clean.append((city_value,station_value,day.isoformat(),vals["pm25"],vals["pm10"],int(vals["aqi"]) if vals["aqi"] is not None else None,source,url,datetime.now(timezone.utc).isoformat()))
-        except (ValueError,TypeError,OverflowError): rejected+=1
-    imported=0; duplicates=0
+    parsed,duplicate_existing=_read_historical_upload(raw,source_name,source_url,unit)
+    return {"valid_rows":parsed["valid_rows"],"new_rows":parsed["valid_rows"]-duplicate_existing,"rejected_rows":parsed["rejected_rows"],"duplicate_rows_in_file":parsed["duplicate_rows"],"duplicate_rows_already_saved":duplicate_existing,"date_field":parsed["date_field"],"date_from":parsed["date_from"],"date_to":parsed["date_to"],"stations":parsed["stations"],"provided_metrics":parsed["provided_metrics"],"valid_metric_days":parsed["metric_days"],"unit":parsed["unit"],"warning":"Station names and source labels are not checked against CPCB by this app."}
+
+@app.post("/api/historical/import")
+async def import_historical_csv(file:UploadFile=File(...),source_name:str=Form(...),source_url:Optional[str]=Form(default=None),unit:str=Form(default="ug/m3")):
+    if not file.filename or not file.filename.lower().endswith(".csv"): raise HTTPException(415,"Upload a CSV file")
+    raw=await file.read(10_000_001)
+    if len(raw)>10_000_000: raise HTTPException(413,"Maximum file size is 10 MB")
+    parsed,duplicate_existing=_read_historical_upload(raw,source_name,source_url,unit)
+    imported=0
     with hist.connect() as db:
-        for record in clean:
-            cur=db.execute("INSERT OR IGNORE INTO daily_observations(city,station,observed_date,pm25,pm10,aqi,source_name,source_url,imported_at) VALUES(?,?,?,?,?,?,?,?,?)",record)
+        for row in parsed["rows"]:
+            cur=db.execute("""INSERT OR IGNORE INTO daily_observations
+                (city,station,observed_date,pm25,pm10,aqi,pm_unit,source_name,source_url,imported_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (row["city"],row["station"],row["date"],row["pm25"],row["pm10"],row["aqi"],row["pm_unit"],row["source_name"],row["source_url"],datetime.now(timezone.utc).isoformat()))
             if cur.rowcount: imported+=1
-            else: duplicates+=1
         total=db.execute("SELECT count(*) FROM daily_observations").fetchone()[0]
-    return {"imported":imported,"rejected":rejected,"duplicates":duplicates,"records_loaded":total,"provenance":"Source is uploader-supplied and not independently verified by the app.","message":"Daily observations saved locally. Check the source, station, units, and dates before interpreting comparisons."}
+    duplicates=parsed["duplicate_rows"]+duplicate_existing+(parsed["valid_rows"]-duplicate_existing-imported)
+    return {"imported":imported,"rejected":parsed["rejected_rows"],"duplicates":duplicates,"records_loaded":total,"units":"PM₂.₅/PM₁₀ stored as µg/m³; AQI is unitless and source-reported.","provenance":"Source is uploader-supplied and not independently verified by the app.","message":"Daily station records saved locally. Check station, source, dates, and daily aggregation method before comparing."}
 @app.get("/api/alerts")
 async def alerts():
     d=await latest(); return {"alerts":[],"status":"no active rule triggers evaluated" if d.get("status")!="available" else "no threshold rules configured","data_status":d.get("status")}

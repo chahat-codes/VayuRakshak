@@ -16,6 +16,15 @@ class CommunityTests(unittest.TestCase):
             for table in ("reports","comments","likes","posts","points","event_participants","events","completions","pledges","memberships","communities"):
                 c.execute(f"DELETE FROM {table}")
 
+    def test_home_and_challenge_catalog_apis_remain_available(self):
+        home=self.client.get('/')
+        self.assertEqual(home.status_code,200)
+        self.assertIn('Explore Diwali Pollution',home.text)
+        challenges=self.client.get('/api/community/challenges')
+        self.assertEqual(challenges.status_code,200)
+        self.assertTrue(challenges.json())
+        self.assertTrue(all('points' in row for row in challenges.json()))
+
     def test_membership_and_challenge_points_are_unique(self):
         c=self.client; person={"user_id":"user_12345678","display_name":"Green Neighbour"}
         community=c.post('/api/community/communities',json={"name":"Test Green Group","city":"Patiala","description":"A place to share thoughtful celebration ideas."}).json()
