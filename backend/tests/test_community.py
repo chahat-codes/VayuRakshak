@@ -20,7 +20,7 @@ class CoreAppTests(unittest.TestCase):
         r=self.client.get('/'); self.assertEqual(r.status_code,200)
         for label in ('AQI Intelligence','VAYU CONNECT','VAYU CAMPUS','My Reports','Settings','Understand Your Air.','Protect Your Community.'): self.assertIn(label,r.text)
         self.assertIn('hero-image',r.text); self.assertIn('pillar-grid',r.text)
-        for pillar in ('hero-neighbourhood.svg','air-intelligence.svg','connect-community.svg','campus-action.svg'): self.assertEqual(self.client.get('/static/images/'+pillar).status_code,200,pillar)
+        for photo in ('delhi-pollution.jpg','community-cleanup.jpg','campus-planting.jpg'): self.assertEqual(self.client.get('/static/images/photos/'+photo).status_code,200,photo)
         for old in ('Diwali Planner','What If','Green Community','My Progress'): self.assertNotIn(old,r.text)
         for path in ('/api/simulate','/api/alerts','/api/community/challenges','/api/community/feed','/api/community/impact'):
             self.assertEqual(self.client.get(path).status_code,404,path)
