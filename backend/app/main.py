@@ -1,5 +1,6 @@
 import csv, io, os, math
 from datetime import datetime, timedelta, timezone, date
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Optional
 import httpx
@@ -46,10 +47,17 @@ async def latest():
             a=hourly.get("pm2_5",[]); b=hourly.get("pm10",[])
             if i<len(a) and i<len(b) and a[i] is not None and b[i] is not None:
                 vals.append({"timestamp":stamp,"pm25":a[i],"pm10":b[i],"kind":"modelled_grid_estimate","aqi":None})
-        now=datetime.now().astimezone().replace(tzinfo=None).isoformat(timespec="hours")
-        current=min(vals,key=lambda x:abs((datetime.fromisoformat(x["timestamp"])-datetime.fromisoformat(now)).total_seconds())) if vals else None
-        future=[x for x in vals if x["timestamp"]>=now][:24]
-        return {"provider":"Open-Meteo Air Quality API","location":LOCATION,"latitude":LAT,"longitude":LON,"retrieved_at":datetime.now(timezone.utc).isoformat(),"current":current,"series":vals[-48:],"forecast":future,"status":"available","label":"Modelled grid estimate; not a monitoring station measurement","aqi":None}
+        local_zone=ZoneInfo(payload.get("timezone") or "Asia/Kolkata")
+        now=datetime.now(local_zone)
+        def local_time(stamp):
+            value=datetime.fromisoformat(stamp)
+            return value.replace(tzinfo=local_zone) if value.tzinfo is None else value.astimezone(local_zone)
+        current=min(vals,key=lambda x:abs((local_time(x["timestamp"])-now).total_seconds())) if vals else None
+        future=[x for x in vals if local_time(x["timestamp"])>=now]
+        tomorrow_date=(now.date()+timedelta(days=1)).isoformat()
+        tomorrow_values=[float(x["pm25"]) for x in future if local_time(x["timestamp"]).date().isoformat()==tomorrow_date]
+        tomorrow_forecast={"date":tomorrow_date,"pm25_mean":sum(tomorrow_values)/len(tomorrow_values),"pm25_min":min(tomorrow_values),"pm25_max":max(tomorrow_values),"hours":len(tomorrow_values)} if tomorrow_values else None
+        return {"provider":"Open-Meteo Air Quality API","location":LOCATION,"latitude":LAT,"longitude":LON,"timezone":str(local_zone),"retrieved_at":datetime.now(timezone.utc).isoformat(),"current":current,"series":vals[-48:],"forecast":future,"tomorrow_forecast":tomorrow_forecast,"status":"available","label":"Modelled grid estimate; not a monitoring station measurement","aqi":None}
     except Exception as e:
         rows=read_rows(); latest_row=rows[-1] if rows else None
         return {"provider":"Open-Meteo Air Quality API","location":LOCATION,"current":latest_row,"series":[],"forecast":[],"status":"unavailable","error":"Provider request failed. Check connection and try again.","aqi":None,"label":"Imported observations" if latest_row else "No provider data or imported observations available"}
