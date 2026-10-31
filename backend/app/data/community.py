@@ -71,7 +71,12 @@ def init():
         if "action_started_at" not in columns:
             c.execute("ALTER TABLE environment_reports ADD COLUMN action_started_at TEXT")
         # Older MVP records used “resolved” for volunteer-submitted proof. They were not independently verified.
-        c.execute("UPDATE environment_reports SET status='resolution_submitted' WHERE status='resolved'")
+        c.execute("UPDATE environment_reports SET status='awaiting_verification' WHERE status IN ('resolved','resolution_submitted')")
+        c.execute("UPDATE environment_reports SET status='under_review' WHERE status='claimed'")
+        c.execute("UPDATE environment_reports SET status='action_reported' WHERE status='action_started'")
+        c.execute("UPDATE report_status_history SET status='awaiting_verification' WHERE status IN ('resolved','resolution_submitted')")
+        c.execute("UPDATE report_status_history SET status='under_review' WHERE status='claimed'")
+        c.execute("UPDATE report_status_history SET status='action_reported' WHERE status='action_started'")
         c.execute("INSERT INTO report_status_history(report_id,status,actor_id,actor_name,note,created_at) SELECT r.id,r.status,r.reporter_id,r.reporter_name,'Existing report; earlier status history was not recorded',r.created_at FROM environment_reports r WHERE NOT EXISTS (SELECT 1 FROM report_status_history h WHERE h.report_id=r.id)")
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -80,3 +85,76 @@ def award(c,user,name,community,source_type,source_id,points):
     c.execute("INSERT OR IGNORE INTO points(user_id,display_name,community_id,source_type,source_id,points,created_at) VALUES(?,?,?,?,?,?,?)",(user,name,community,source_type,str(source_id),points,now()))
 
 init()
+
+# VAYU CAMPUS records share the existing community database; private files are stored separately.
+def init_campus():
+    with connect() as c:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS campus_users(
+          id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT NOT NULL,
+          password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'applicant', status TEXT NOT NULL DEFAULT 'active',
+          created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS campus_sessions(
+          token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES campus_users(id) ON DELETE CASCADE,
+          expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS community_activities(
+          id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, display_name TEXT NOT NULL, name TEXT NOT NULL,
+          description TEXT NOT NULL, category TEXT NOT NULL, city TEXT NOT NULL, latitude REAL, longitude REAL,
+          starts_at TEXT NOT NULL, image_path TEXT, status TEXT NOT NULL DEFAULT 'pending',
+          submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, rejection_reason TEXT);
+        CREATE TABLE IF NOT EXISTS community_activity_interests(
+          activity_id INTEGER NOT NULL REFERENCES community_activities(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL, display_name TEXT NOT NULL, joined_at TEXT NOT NULL,
+          PRIMARY KEY(activity_id,user_id));
+        CREATE TABLE IF NOT EXISTS college_applications(
+          id INTEGER PRIMARY KEY, college_name TEXT NOT NULL, city TEXT NOT NULL, official_email TEXT,
+          representative TEXT NOT NULL, contact TEXT NOT NULL, club_details TEXT NOT NULL DEFAULT '',
+          document_path TEXT, reason TEXT NOT NULL, focus TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending',
+          rejection_reason TEXT, submitted_by INTEGER REFERENCES campus_users(id), submitted_at TEXT NOT NULL,
+          reviewed_by TEXT, reviewed_at TEXT, community_id INTEGER);
+        CREATE TABLE IF NOT EXISTS campus_colleges(
+          id INTEGER PRIMARY KEY, application_id INTEGER NOT NULL UNIQUE REFERENCES college_applications(id),
+          name TEXT NOT NULL, city TEXT NOT NULL, description TEXT NOT NULL, focus TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL DEFAULT 'approved', approved_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS student_applications(
+          id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES campus_users(id), college_id INTEGER NOT NULL REFERENCES campus_colleges(id),
+          official_email TEXT, document_path TEXT, details TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+          rejection_reason TEXT, submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, UNIQUE(user_id,college_id));
+        CREATE TABLE IF NOT EXISTS campus_campaigns(
+          id INTEGER PRIMARY KEY, college_id INTEGER REFERENCES campus_colleges(id), name TEXT NOT NULL, description TEXT NOT NULL,
+          category TEXT NOT NULL, objective TEXT NOT NULL, city TEXT NOT NULL, latitude REAL, longitude REAL,
+          starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, activities TEXT NOT NULL, image_path TEXT,
+          status TEXT NOT NULL DEFAULT 'pending', submitted_by INTEGER REFERENCES campus_users(id), submitted_at TEXT NOT NULL,
+          reviewed_by TEXT, reviewed_at TEXT, rejection_reason TEXT);
+        CREATE TABLE IF NOT EXISTS campaign_participants(
+          campaign_id INTEGER NOT NULL REFERENCES campus_campaigns(id) ON DELETE CASCADE,
+          college_id INTEGER NOT NULL REFERENCES campus_colleges(id), joined_at TEXT NOT NULL,
+          PRIMARY KEY(campaign_id,college_id));
+        CREATE TABLE IF NOT EXISTS campaign_completions(
+          id INTEGER PRIMARY KEY, campaign_id INTEGER NOT NULL REFERENCES campus_campaigns(id), college_id INTEGER NOT NULL REFERENCES campus_colleges(id),
+          user_id INTEGER REFERENCES campus_users(id), proof_path TEXT NOT NULL, note TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+          submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, rejection_reason TEXT, UNIQUE(campaign_id,college_id));
+        CREATE TABLE IF NOT EXISTS campus_observations(
+          id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES campus_users(id), college_id INTEGER REFERENCES campus_colleges(id),
+          kind TEXT NOT NULL CHECK(kind IN ('visual','sensor','external')), category TEXT NOT NULL, observed_at TEXT NOT NULL,
+          city TEXT NOT NULL, latitude REAL, longitude REAL, description TEXT NOT NULL, method TEXT NOT NULL,
+          source TEXT NOT NULL, pm25 REAL, pm10 REAL, instrument TEXT, calibration TEXT, photo_path TEXT,
+          status TEXT NOT NULL DEFAULT 'unreviewed', submitted_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS observation_reviews(
+          id INTEGER PRIMARY KEY, observation_id INTEGER NOT NULL REFERENCES campus_observations(id) ON DELETE CASCADE,
+          status TEXT NOT NULL, reviewer TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS campus_projects(
+          id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES campus_users(id), college_id INTEGER REFERENCES campus_colleges(id),
+          title TEXT NOT NULL, description TEXT NOT NULL, topic TEXT NOT NULL, url TEXT, status TEXT NOT NULL DEFAULT 'pending',
+          submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, rejection_reason TEXT);
+        CREATE TABLE IF NOT EXISTS campus_audit(
+          id INTEGER PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL,
+          entity_id INTEGER NOT NULL, details TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_campus_college_application_dedupe ON college_applications(submitted_by, lower(college_name), lower(city));
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_campus_observation_dedupe ON campus_observations(user_id, kind, category, observed_at, source);
+        CREATE INDEX IF NOT EXISTS idx_campus_app_status ON college_applications(status,submitted_at);
+        CREATE INDEX IF NOT EXISTS idx_campus_obs_review ON campus_observations(status,submitted_at);
+        CREATE INDEX IF NOT EXISTS idx_campus_campaign_status ON campus_campaigns(status,submitted_at);
+        """)
+
+init_campus()

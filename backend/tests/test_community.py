@@ -20,7 +20,7 @@ class CoreAppTests(unittest.TestCase):
         r=self.client.get('/'); self.assertEqual(r.status_code,200)
         for label in ('Know Your Community','AQI Prediction','My Reports','Settings'): self.assertIn(label,r.text)
         for old in ('Diwali Planner','What If','Green Community','My Progress'): self.assertNotIn(old,r.text)
-        for path in ('/api/historical/coverage','/api/simulate','/api/alerts','/api/community/challenges','/api/community/feed','/api/community/impact'):
+        for path in ('/api/simulate','/api/alerts','/api/community/challenges','/api/community/feed','/api/community/impact'):
             self.assertEqual(self.client.get(path).status_code,404,path)
         self.assertEqual(self.client.get('/api/health').json()['status'],'ok')
     def test_groups_and_report_track_duplicate_confirm_dispute_and_resolution(self):
@@ -44,12 +44,12 @@ class CoreAppTests(unittest.TestCase):
             from unittest.mock import patch
             photo='a'*32+'.jpg'; (Path(folder)/photo).write_bytes(b'proof')
             with patch.object(main,'UPLOADS',Path(folder)):
-                self.assertEqual(self.client.post(f'/api/environment/reports/{rid}/claim',json=helper).json()['status'],'claimed')
-                self.assertEqual(self.client.post(f'/api/environment/reports/{rid}/start',json=helper).json()['status'],'action_started')
+                self.assertEqual(self.client.post(f'/api/environment/reports/{rid}/claim',json=helper).json()['status'],'under_review')
+                self.assertEqual(self.client.post(f'/api/environment/reports/{rid}/start',json=helper).json()['status'],'action_reported')
                 outcome=self.client.post(f'/api/environment/reports/{rid}/resolve',json={**helper,'resolution_photo_url':'/uploads/'+photo,'resolution_note':'Area cleared.'})
                 self.assertEqual(outcome.status_code,200,outcome.text); self.assertFalse(outcome.json()['independently_verified'])
         mine=self.client.get('/api/environment/reports/mine',params={'user_id':owner['user_id']}).json()['reports'][0]
-        self.assertEqual([x['status'] for x in mine['history']],['submitted','claimed','action_started','resolution_submitted'])
+        self.assertEqual([x['status'] for x in mine['history']],['submitted','under_review','action_reported','awaiting_verification'])
     def test_missing_values_remain_unavailable_and_invalid_data_rejected(self):
         self.assertEqual(self.client.post('/api/environment/reports',json={**self.person('x'),'category':'smoke','description':'Smoke near a busy road.','city':'Delhi','latitude':28.6}).status_code,422)
         self.assertEqual(self.client.get('/api/air-quality/latest').status_code,200)

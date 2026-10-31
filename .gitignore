@@ -7,3 +7,4 @@ backend/data/community.sqlite3
 backend/data/historical.sqlite3
 backend/data/uploads/
 backend/models/*
+backend/data/private-campus/

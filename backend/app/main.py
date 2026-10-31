@@ -18,6 +18,9 @@ from pydantic import BaseModel, Field
 
 from app.data import community as cm
 from app.data.store import read_rows
+from app.campus import router as campus_router, connect_router
+from app.historical_api import router as historical_router
+from app.legacy_data_api import router as legacy_data_router
 
 BASE = Path(__file__).resolve().parent
 UPLOADS = Path(__file__).resolve().parents[1] / "data" / "uploads"
@@ -29,6 +32,10 @@ LOCATION = os.getenv("VAYU_LOCATION", "Delhi")
 app = FastAPI(title="VAYURAKSHAK AI", description="Community hazard reports and transparent air-quality information")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 app.mount("/uploads", StaticFiles(directory=UPLOADS), name="uploads")
+app.include_router(campus_router)
+app.include_router(connect_router)
+app.include_router(historical_router)
+app.include_router(legacy_data_router)
 
 @app.get("/", response_class=HTMLResponse)
 def home():
@@ -210,7 +217,7 @@ def similar_reports(body: EnvironmentSimilar):
     incoming = {token for token in re.findall(r"[a-z0-9]+", body.description.casefold()) if len(token) > 2}
     cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     with cm.connect() as c:
-        rows = c.execute("SELECT id,description,status,created_at,latitude,longitude FROM environment_reports WHERE lower(city)=? AND category=? AND created_at>=? AND status NOT IN ('resolution_submitted','resolved') ORDER BY created_at DESC LIMIT 100",
+        rows = c.execute("SELECT id,description,status,created_at,latitude,longitude FROM environment_reports WHERE lower(city)=? AND category=? AND created_at>=? AND status NOT IN ('awaiting_verification','verified_resolved','closed_without_verification') ORDER BY created_at DESC LIMIT 100",
                          (city, body.category, cutoff)).fetchall()
     matches = []
     for row in rows:
@@ -303,10 +310,10 @@ def claim_report(report_id: int, body: Person):
             raise HTTPException(404, "Report not found")
         if row["status"] != "submitted":
             raise HTTPException(409, "This report is no longer open")
-        c.execute("UPDATE environment_reports SET status='claimed',claimed_by_id=?,claimed_by_name=?,claimed_at=? WHERE id=? AND status='submitted'",
+        c.execute("UPDATE environment_reports SET status='under_review',claimed_by_id=?,claimed_by_name=?,claimed_at=? WHERE id=? AND status='submitted'",
                   (body.user_id, clean_text(body.display_name), cm.now(), report_id))
-        _record_status(c, report_id, "claimed", body.user_id, clean_text(body.display_name), "Volunteer accepted report")
-    return {"id": report_id, "status": "claimed"}
+        _record_status(c, report_id, "under_review", body.user_id, clean_text(body.display_name), "Volunteer accepted report")
+    return {"id": report_id, "status": "under_review"}
 
 @app.post("/api/environment/reports/{report_id}/start")
 def start_action(report_id: int, body: Person):
@@ -314,14 +321,14 @@ def start_action(report_id: int, body: Person):
         row = c.execute("SELECT status,claimed_by_id FROM environment_reports WHERE id=?", (report_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Report not found")
-        if row["status"] != "claimed":
+        if row["status"] != "under_review":
             raise HTTPException(409, "Only an accepted report can be started")
         if row["claimed_by_id"] != body.user_id:
             raise HTTPException(403, "Only the accepting profile can start the action")
-        c.execute("UPDATE environment_reports SET status='action_started',action_started_at=? WHERE id=?",
+        c.execute("UPDATE environment_reports SET status='action_reported',action_started_at=? WHERE id=?",
                   (cm.now(), report_id))
-        _record_status(c, report_id, "action_started", body.user_id, clean_text(body.display_name), "Action reported as started")
-    return {"id": report_id, "status": "action_started"}
+        _record_status(c, report_id, "action_reported", body.user_id, clean_text(body.display_name), "Action reported as started")
+    return {"id": report_id, "status": "action_reported"}
 
 @app.post("/api/environment/reports/{report_id}/resolve")
 def submit_resolution(report_id: int, body: EnvironmentResolve):
@@ -330,16 +337,16 @@ def submit_resolution(report_id: int, body: EnvironmentResolve):
         row = c.execute("SELECT status,claimed_by_id FROM environment_reports WHERE id=?", (report_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Report not found")
-        if row["status"] != "action_started":
+        if row["status"] != "action_reported":
             raise HTTPException(409, "Start the action before submitting evidence")
         if row["claimed_by_id"] != body.user_id:
             raise HTTPException(403, "Only the accepting profile can submit resolution evidence")
         note = clean_text(body.resolution_note or "")
-        c.execute("UPDATE environment_reports SET status='resolution_submitted',resolution_photo_url=?,resolution_note=?,resolved_at=? WHERE id=?",
+        c.execute("UPDATE environment_reports SET status='awaiting_verification',resolution_photo_url=?,resolution_note=?,resolved_at=? WHERE id=?",
                   (body.resolution_photo_url, note, cm.now(), report_id))
-        _record_status(c, report_id, "resolution_submitted", body.user_id, clean_text(body.display_name), "Evidence submitted; awaiting independent review")
-    return {"id": report_id, "status": "resolution_submitted", "independently_verified": False,
-            "message": "Evidence was submitted; no authority integration or independent review is connected."}
+        _record_status(c, report_id, "awaiting_verification", body.user_id, clean_text(body.display_name), "Evidence submitted; awaiting independent review")
+    return {"id": report_id, "status": "awaiting_verification", "independently_verified": False,
+            "message": "Evidence was submitted; it must be independently verified before the issue is marked resolved."}
 
 @app.post("/api/community/uploads", status_code=201)
 async def upload_image(file: UploadFile = File(...)):

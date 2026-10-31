@@ -1,63 +1,71 @@
 # VAYURAKSHAK AI
 
-A small, transparent community air-quality app. The interface keeps four useful areas: **Home**, **Know Your Community**, **AQI Prediction**, **My Reports**, and **Settings**.
+A local-first air-quality and community action application with two community experiences:
 
-## What it does
-
-- **Home:** Shows the latest available air information and recent community reports.
-- **Know Your Community:** Browse environmental issue reports, add a report, respond that you observed or dispute it, and find or add a local group.
-- **AQI Prediction:** Shows available PM₂.₅ and PM₁₀ information and provider forecasts. AQI appears only when the source supplies a value. The default live source is Open-Meteo modelled grid data, not a monitoring-station observation.
-- **My Reports:** Tracks reports submitted from the current browser profile and shows status history.
-- **Settings:** Stores a display name for that browser profile and explains the configured air-data location.
+- **VAYU CONNECT:** Residents share photo-first environmental reports, find community-submitted groups, respond to issues, and track follow-up. A report is “Verified resolved” only after administrator review.
+- **VAYU CAMPUS:** College and student applications, approved college discovery, reviewed inter-college campaigns, structured environmental observations, research CSV export, project showcase, and contribution recognition.
+- **AQI Prediction:** Source-labelled PM₂.₅/PM₁₀ estimates and forecasts. AQI is shown only when a supported source supplies it.
+- **Diwali AQI Watch:** Compare imported station observations around each year’s actual Diwali date. Missing measurements remain missing.
 
 ## Run locally
 
-```sh
+~~~sh
 cd backend
 python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
+export VAYU_ADMIN_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
-```
+~~~
 
-Open <http://127.0.0.1:8001>. API documentation is at <http://127.0.0.1:8001/docs>.
+Open <http://127.0.0.1:8001>. API docs are at <http://127.0.0.1:8001/docs>. Keep the admin token private and out of Git. Restart the server when changing it. For HTTPS deployments set VAYU_SECURE_COOKIE=1.
 
-The default provider location is Delhi. Configure it before starting the server:
+Air data defaults to Delhi. Configure the provider location before starting the server:
 
-```sh
-export VAYU_LATITUDE=19.0760
-export VAYU_LONGITUDE=72.8777
-export VAYU_LOCATION="Mumbai"
-```
+~~~sh
+export VAYU_LATITUDE=28.6139
+export VAYU_LONGITUDE=77.2090
+export VAYU_LOCATION="Delhi"
+~~~
 
-## Report workflow and limits
+The live PM data provider is Open-Meteo’s modelled grid, not a monitoring station. The default provider request is for the server-configured location. The app does not infer AQI from PM values.
 
-Reports are stored in the local SQLite database and receive a reference such as `VAYU-000001`. Similar recent reports can be suggested, but are never merged automatically. Users can respond that they observed or dispute a report; those profile responses are not independent verification. A volunteer may accept a report, mark an action as started, and submit a resolution photo. Submitted evidence is not verified by an authority.
+## Campus verification and moderation
 
-Groups are community-submitted and not independently verified. There is no sign-in, secure identity, staffed moderation, municipal authority integration, SMS/push alerting, AI image classification, or automatic action verification. Report locations are rounded before storage/display in the public report view. The local coordinate plot is not a street map, and the app does not send report coordinates to an external map provider.
+VAYU CAMPUS users register with an email and 12+ character password. College and student applications require a private verification document. College records, student membership, campaigns, campaign evidence, observations, and projects remain private/pending until review. Admin endpoints require the X-Admin-Token header, compared against VAYU_ADMIN_TOKEN. If it is unset, public campus browsing works but review actions return unavailable.
 
-Air information is labelled **Observed**, **Estimated**, **Forecast**, or **Unavailable**. Open-Meteo estimates are modelled grid values, not CPCB station readings. Forecasts are kept separate from past values. No AQI is inferred from PM values. If the provider is unavailable and no local observation is available, the app shows an unavailable state rather than inventing data.
+Private verification documents are stored under backend/data/private-campus/, outside the public /uploads mount. They are served only through admin-authenticated document routes. Campus sessions use HTTP-only, SameSite cookies and expire after seven days. Admin actions are recorded in the shared community SQLite audit table.
 
-## Data and storage
+Approved students can propose campaigns, join approved campaigns, submit campaign evidence, and submit typed observations. Visual observations cannot contain PM sensor readings; sensor observations require instrument metadata. Observations are labelled unreviewed/reviewed/quality-checks-passed/rejected. “Quality checks passed” is an application review status, not scientific certification. Research export includes only reviewed records and omits identity and private files.
 
-The app keeps existing local databases and imported files in place. Runtime community data and uploaded images are stored under `backend/data/`. AQI station observations from a locally supplied CSV may be shown as observed values; source and station coverage depend on what has actually been imported. No complete verified city-wide historical archive is bundled.
+VAYU CONNECT retains the existing pseudonymous citizen-report flow; it is not authenticated. Citizen confirmations are self-reported. Report evidence awaits admin review and is not automatically treated as resolution.
 
-## Architecture
+## Existing data and APIs
 
-```mermaid
-flowchart LR
-  Person[Community member] --> UI[Responsive HTML/CSS/JS]
-  UI --> API[FastAPI]
-  API --> AQ[Air quality API]
-  AQ --> OM[Open-Meteo model estimates and forecasts]
-  API --> DB[(Local SQLite community reports and groups)]
-  API --> CSV[(Locally imported observations)]
-```
+The app reuses the existing community.sqlite3, historical.sqlite3, imported observation CSV, and optional model artifacts. Existing report records are retained. Legacy report states are migrated to under-review/action-reported/awaiting-verification statuses. Historical import, coverage and comparison routes, observation import/history/export routes, and model evaluation routes remain available.
+
+Historical daily CSV format:
+
+~~~csv
+date,city,station,pm25,pm10,aqi
+2024-10-31,Delhi,Station name,82.5,140,302
+~~~
+
+PM values are µg/m³; AQI is source-reported and unitless. Import validation rejects invalid/future rows and prevents station-day duplicates from overwriting prior readings. Source names and URLs are uploader-supplied, not independently verified.
+
+## Important limitations
+
+- No email verification provider is configured. Uploaded identity proof is reviewed by an administrator.
+- VAYU_ADMIN_TOKEN is a single shared server secret, not a multi-user admin identity system.
+- No official complaint submission or verified organisation directory is integrated.
+- Student observations are not official measurements; no NASA/GLOBE affiliation or data transfer is claimed. GLOBE protocol compatibility has not yet been established.
+- AQI/forecast comparisons are limited to the single server-configured provider location. Cross-campus model requests and AQI-standard normalization are not implemented.
+- The report coordinate view is a local plot, not a street map. No third-party basemap receives coordinates.
+- No production build step exists; the existing frontend is static HTML/CSS/JavaScript served by FastAPI.
 
 ## Tests
 
-From `backend/`:
-
-```sh
+~~~sh
+cd backend
 python -m unittest discover -s tests -v
-```
+~~~
